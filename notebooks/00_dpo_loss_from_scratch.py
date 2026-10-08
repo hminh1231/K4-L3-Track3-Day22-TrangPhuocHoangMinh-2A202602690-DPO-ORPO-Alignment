@@ -59,8 +59,9 @@ print(f"sum log p = {total.item():.3f}   mean log p = {mean.item():.3f}")
 # %%
 def my_dpo_loss(pc, pr, rc, rr, beta=0.1):
     """pc/pr: policy log-prob chosen/rejected; rc/rr: reference. Trả về loss trung bình."""
-    # TODO: viết bằng torch.nn.functional.logsigmoid
-    return None
+    chosen_reward = beta * (pc - rc)
+    rejected_reward = beta * (pr - rr)
+    return -torch.nn.functional.logsigmoid(chosen_reward - rejected_reward).mean()
 
 
 # %%
@@ -73,6 +74,10 @@ if mine is None:
 else:
     assert torch.allclose(torch.as_tensor(mine), ref_loss, atol=1e-6), (mine, ref_loss)
     print(f"✓ Khớp tham chiếu: {ref_loss.item():.4f}")
+    # policy = reference ⇒ mọi reward bằng 0 ⇒ loss = log 2
+    same = torch.tensor([-20.0, -35.0])
+    assert abs(my_dpo_loss(same, same - 3, same, same - 3).item() - math.log(2)) < 1e-6
+    print(f"✓ policy = reference cho loss = log 2 = {math.log(2):.4f}")
 
 # %% [markdown]
 # ## 3. Bước 0: mô hình đang học (policy) = reference ⇒ loss = log 2
@@ -112,6 +117,19 @@ scenarios = {
 for name, (pc_, pr_) in scenarios.items():
     loss, cr, rj = M.dpo_loss(pc_, pr_, ref_c, ref_r, beta=1.0)
     print(f"{name:28s} loss {loss.item():.3f}  reward chosen {cr.item():+.1f}  rejected {rj.item():+.1f}")
+
+# %% [markdown]
+# **Trả lời: vì sao margin tăng được trong khi log-xác suất của câu chosen giảm?**
+#
+# DPO chỉ tối ưu **hiệu số** `margin = β[(log π(y_w) − log π_ref(y_w)) − (log π(y_l) − log π_ref(y_l))]`.
+# Loss `−log σ(margin)` không ràng buộc riêng từng số hạng, nên mọi cách làm margin tăng đều được thưởng như nhau.
+# Nếu log-prob của rejected giảm nhanh hơn log-prob của chosen, margin vẫn tăng dù chosen cũng bị đẩy xuống.
+# Kịch bản B ở trên cho thấy điều đó: chosen −3, rejected −5, margin vẫn +2 và loss bằng hệt kịch bản A (0.127).
+#
+# Trong thực tế điều này hay xảy ra vì chosen và rejected thường rất giống nhau (chung phần mở đầu, nhiều token
+# trùng). Gradient đẩy rejected xuống cũng kéo xác suất các token chung của chosen xuống theo. Khối xác suất bị
+# lấy đi không nhất thiết chuyển sang chosen mà có thể dồn sang các câu trả lời khác ngoài dữ liệu. Đó là
+# likelihood displacement. RPO (thêm NLL của chosen) phạt đúng trường hợp này: ở ô dưới, kịch bản B có RPO loss cao hơn A.
 
 # %% [markdown]
 # **RPO** thêm NLL của câu chosen vào loss: kịch bản B bị phạt vì chosen bị đẩy xuống.
