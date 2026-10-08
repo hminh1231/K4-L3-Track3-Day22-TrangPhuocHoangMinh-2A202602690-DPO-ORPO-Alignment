@@ -191,13 +191,32 @@ _Thành phần reward nào tăng trước (đúng định dạng hay đúng đá
 ## Danh sách bonus
 
 - [ ] NB3b — biến thể loss (+8)
-- [ ] NB5 — GGUF SFT+DPO (+4)
+- [x] NB5 — GGUF SFT+DPO (+4)
 - [ ] NB6 — benchmark (+6)
 - [ ] NB7 — GRPO (+8)
 - [ ] β-sweep (+6)
 - [ ] Chấm chéo bằng hai họ mô hình (+4)
 - [ ] Đẩy lên HF Hub + thẻ mô tả mô hình (+3)
 - [ ] `BONUS-CHALLENGE.md` (không chấm điểm)
+
+---
+
+### Ghi chú NB5 — GGUF
+
+> Từ `data/eval/deploy_meta.json`
+
+Adapter DPO (đã kiểm tra có tensor LoRA trước khi xuất) được gộp vào `models/sft-merged` ở 16-bit rồi lượng tử
+hoá Q4_K_M: file GGUF **2.497 MB** (≈ 2,5 GB, so với ~8 GB ở fp16). Với cùng câu hỏi "Giải thích ngắn gọn
+(3 câu) cách thuật toán Bubble sort hoạt động", greedy, 160 token, cùng prompt đã render bằng chat template:
+
+- **HF (SFT+DPO, 16-bit):** "…so sánh các cặp phần tử liên tiếp … và **đổi chỗ** chúng nếu chúng không ở
+  **đúng thứ tự**. Quá trình này lặp đi lặp lại cho đến khi **không còn có cặp phần tử nào cần được đổi chỗ**…"
+- **GGUF Q4_K_M:** "…so sánh các cặp phần tử liên tiếp … và **hoán đổi** chúng nếu chúng không ở
+  **vị trí đúng**. Quá trình này lặp đi lặp lại cho đến khi **không còn hoán đổi nào có thể thực hiện được**…"
+
+Hai câu cùng cấu trúc, cùng nội dung và cùng độ dài; chỉ khác vài từ đồng nghĩa, đúng mức lệch dự kiến của
+lượng tử hoá 4-bit. Cả hai đều chỉ viết 2 câu thay vì 3 như đề yêu cầu, và vẫn mở đầu bằng thẻ `</tool_call>`
+như ở NB4, nên lỗi định dạng này nằm trong trọng số mô hình chứ không do bước xuất GGUF.
 
 ---
 
