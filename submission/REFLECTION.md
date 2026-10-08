@@ -1,9 +1,9 @@
 # Bài phản tư — Lab 22 (căn chỉnh mô hình bằng DPO/ORPO)
 
-**Tên:** _<Họ Tên>_
-**Khoá:** _<A20-K4 / ...>_
-**Tier đã chạy:** _<T4 | BIGGPU | cả hai>_
-**Ngày:** _<YYYY-MM-DD>_
+**Tên:** Trang Phước Hoàng Minh (2A202602690)
+**Khoá:** K4 · Track 3
+**Tier đã chạy:** T4
+**Ngày:** 2026-10-08
 
 > Mọi con số dưới đây lấy từ file do notebook sinh ra (`adapters/dpo/dpo_metrics.json`,
 > `data/eval/judge_summary.json`, `data/eval/benchmark_results.json`…), không ước lượng bằng mắt.
@@ -14,14 +14,14 @@
 
 | Mục | Giá trị |
 |---|---|
-| GPU / VRAM | _<ví dụ: Colab T4 16 GB>_ |
-| Mô hình gốc | _<ví dụ: unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit>_ |
-| Dữ liệu SFT | _<saillab/alpaca-vietnamese-cleaned · N mẫu · số epoch>_ |
-| Dữ liệu sở thích | _<sailor2/sea-ultrafeedback-onpolicy (vi) · N huấn luyện / N held-out>_ |
-| Chosen dài hơn rejected (NB2) | _<ví dụ: 65%>_ |
-| DPO: β / tốc độ học (lr) / số epoch | _<0.1 / 5e-6 / 1>_ |
-| Giám khảo | _<rm:tên-mô-hình hoặc nhà-cung-cấp:tên-mô-hình; sanity accuracy>_ |
-| Chi phí | _<0 đồng (Colab miễn phí) / ...>_ |
+| GPU / VRAM | Colab T4 16 GB |
+| Mô hình gốc | unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit |
+| Dữ liệu SFT | saillab/alpaca-vietnamese-cleaned · 1.000 mẫu · 1 epoch (LoRA r=16, lr 2e-4) |
+| Dữ liệu sở thích | sailor2/sea-ultrafeedback-onpolicy (vi) · 800 huấn luyện / 100 held-out |
+| Chosen dài hơn rejected (NB2) | 66% |
+| DPO: β / tốc độ học (lr) / số epoch | 0.1 / 5e-6 / 1 (100 bước, batch hiệu dụng 8) |
+| Giám khảo | ⟨NB4⟩ |
+| Chi phí | 0 đồng tiền API (giám khảo chạy local trên Colab) |
 
 ---
 
@@ -29,13 +29,14 @@
 
 | Chỉ số | Giá trị |
 |---|---:|
-| Thời gian huấn luyện NB3 | _<...>_ |
-| VRAM cao nhất | _<...>_ |
-| Reward gap cuối trên tập huấn luyện (chosen − rejected) | _<...>_ |
-| Độ chính xác reward trên held-out | _<...>_ |
-| Margin trên held-out | _<...>_ |
-| Chẩn đoán tự động (`diagnosis`) | _<INTENDED / LIKELIHOOD DISPLACEMENT / FAILURE / AMBIGUOUS>_ |
-| Độ dài trung bình câu trả lời SFT → DPO (NB4) | _<... → ... ký tự>_ |
+| Thời gian huấn luyện NB3 | 31 phút 24 giây (100 bước), chưa tính ~5 phút tính log-prob tham chiếu |
+| Loss ghi nhận đầu tiên | 0.6937 (≈ log 2 = 0.6931) |
+| Train loss trung bình | 0.6758 |
+| Reward gap cuối trên tập huấn luyện (chosen − rejected) | ≈ 0.09 |
+| Độ chính xác reward trên held-out | 0.73 (bước 25: 0.64) |
+| Margin trên held-out | 0.084 (chosen +0.377, rejected +0.293) |
+| Chẩn đoán tự động (`diagnosis`) | INTENDED |
+| Độ dài trung bình câu trả lời SFT → DPO (NB4) | ⟨NB4⟩ |
 
 ---
 
@@ -43,12 +44,20 @@
 
 > Ảnh: `screenshots/03-dpo-reward-curves.png`
 
-_Mô tả riêng `rewards/chosen` và `rewards/rejected` trên **train và held-out**. Chosen tăng hay giảm?
-Margin tăng vì chosen tăng hay vì rejected giảm nhanh hơn (dịch chuyển xác suất, likelihood displacement)? Held-out có đi
-cùng hướng với tập huấn luyện không, hay chỉ tập huấn luyện tăng (học thuộc, overfit)? Chẩn đoán tự động có khớp với điều bạn
-thấy không?_
+Cả `rewards/chosen` lẫn `rewards/rejected` đều bắt đầu từ 0 (loss đầu tiên 0.6937 ≈ log 2, xác nhận mô hình
+tham chiếu đúng là bản SFT đã gộp) và **cùng tăng** suốt 100 bước. Trên held-out, chosen đi từ +0.074 (bước 25)
+lên +0.377 (bước 100), rejected đi từ +0.059 lên +0.293. Như vậy đây không phải hình mẫu sách giáo khoa
+"chosen ↑, rejected ↓": rejected không hề bị đẩy xuống. Margin tăng (0.015 → 0.084) chỉ vì chosen tăng
+**nhanh hơn** rejected. Cũng không phải dịch chuyển xác suất, vì chosen không giảm; log-prob tuyệt đối của câu
+chosen trên held-out còn tăng nhẹ (−389.9 → −386.8).
 
-_Trả lời ở đây._
+Cách giải thích của mình: dữ liệu Sailor2 là on-policy, cả hai câu đều do cùng một mô hình sinh ra nên có
+chung văn phong. DPO với LoRA kéo mô hình về phía phân phối chung đó, làm xác suất của cả hai câu cùng tăng, và
+kéo câu chosen nhiều hơn một chút. Đường held-out đi cùng hướng và còn mượt hơn đường huấn luyện (margin
+train dao động mạnh 0.03–0.09 vì mỗi bước chỉ có 8 cặp), nên mô hình không học thuộc. Chẩn đoán tự động
+INTENDED khớp về mặt kỹ thuật (margin > 0, chosen > 0), nhưng che mất chi tiết rejected cũng tăng. Margin
+0.084 ở β = 0.1 tương đương chênh lệch log-ratio chỉ ~0.84 nat, tức DPO mới thay đổi mô hình rất nhẹ;
+độ chính xác held-out 0.73 cho thấy tín hiệu thật nhưng còn yếu.
 
 ---
 
@@ -95,7 +104,21 @@ _Nếu không chạy: viết giả thuyết 3 câu về điều bạn dự đoá
 > 3. Kết quả xác nhận hay làm bạn bất ngờ?
 > 4. Làm lại thì bạn đổi gì?
 
-_Trả lời ở đây._
+**Quyết định: giữ β = 0.1 và lr = 5e-6 cho đúng 1 epoch (100 bước) trên 800 cặp.**
+
+1. *Phương án thay thế.* Tăng tốc độ học lên 1e-5 hoặc chạy 2–3 epoch, hoặc hạ β xuống 0.05 để mô hình được
+   phép đi xa khỏi bản SFT hơn. Ở chiều ngược lại có thể giữ lr = 5e-7 như giá trị thường dùng khi tinh chỉnh
+   toàn bộ mô hình.
+2. *Vì sao chọn.* Với LoRA, 5e-7 gần như không làm reward nhúc nhích sau ~100 bước (ghi chú trong NB3), còn
+   lr lớn hoặc nhiều epoch trên 800 cặp dễ học thuộc và dễ đẩy mạnh thiên vị độ dài (66% cặp có chosen dài
+   hơn). Trên T4 miễn phí, một epoch đã tốn ~31 phút, nên 1 epoch là mức cân bằng giữa tín hiệu và thời gian.
+3. *Kết quả.* Lựa chọn này an toàn: held-out đi cùng hướng với tập huấn luyện, không có dấu hiệu học thuộc,
+   độ chính xác held-out lên 0.73. Điều bất ngờ là mức thay đổi quá nhỏ: margin chỉ 0.084 và cả chosen lẫn
+   rejected cùng tăng, nghĩa là phần lớn bước cập nhật kéo mô hình về văn phong chung của dữ liệu chứ chưa
+   tách mạnh câu tốt và câu kém. ⟨NB4: so với win rate⟩
+4. *Làm lại.* Mình sẽ chạy β-sweep (0.05 / 0.1 / 0.5) và thử lr 1e-5 hoặc 2 epoch, theo dõi đồng thời margin
+   held-out và độ dài câu trả lời, để xem margin lớn hơn có đi kèm win rate cao hơn trên các cặp dài gần bằng
+   nhau hay chỉ làm câu trả lời dài ra.
 
 ---
 
